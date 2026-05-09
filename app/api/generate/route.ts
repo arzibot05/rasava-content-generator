@@ -28,10 +28,7 @@ export async function POST(request: Request) {
     }
     fullPrompt += `. Style: ${BRAND_STYLE.imageStyleSuffix}. Instagram ${format || "SQUARE"} format, engaging social media visual.`;
 
-    // Map format to aspect ratio
-    const aspectRatio = format === "STORY" ? "9:16" : format === "PORTRAIT" ? "4:5" : "1:1";
-
-    // OpenRouter API call
+    // OpenRouter API call - use gpt-5-image-mini
     const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -39,12 +36,9 @@ export async function POST(request: Request) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "openai/gpt-5.4-image-2",
+        model: "openai/gpt-5-image-mini",
         messages: [{ role: "user", content: fullPrompt }],
-        modalities: ["image", "text"],
-        image_config: {
-          aspect_ratio: aspectRatio,
-        },
+        modalities: ["image"],
       }),
     });
 
@@ -60,38 +54,16 @@ export async function POST(request: Request) {
     const data = await response.json();
     const message = data?.choices?.[0]?.message;
 
-    // Extract image from message
+    // Extract base64 image from message.images array
     let imageBase64: string | null = null;
 
     if (message?.images && message.images.length > 0) {
-      // OpenRouter returns images in message.images array
       const img = message.images[0];
       if (img.image_url?.url) {
-        // Base64 data URL
         const url = img.image_url.url;
         if (url.startsWith("data:")) {
           const parts = url.split(",");
-          if (parts.length >= 2) {
-            imageBase64 = parts[1];
-          }
-        }
-      }
-    }
-
-    // Fallback: check if content has image parts (some models return differently)
-    if (!imageBase64 && message?.content) {
-      const contentItems = Array.isArray(message.content) ? message.content : [message.content];
-      for (const item of contentItems) {
-        if (item?.type === "image" && item.source?.data) {
-          imageBase64 = item.source.data;
-          break;
-        }
-        if (item?.type === "image_url" && item.url?.startsWith("data:")) {
-          const parts = item.url.split(",");
-          if (parts.length >= 2) {
-            imageBase64 = parts[1];
-            break;
-          }
+          if (parts.length >= 2) imageBase64 = parts[1];
         }
       }
     }
