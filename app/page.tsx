@@ -3,25 +3,62 @@
 import { useState } from "react";
 import { QueryClient, QueryClientProvider, useQuery } from "@tanstack/react-query";
 import Image from "next/image";
-import { Search } from "lucide-react";
+import { Search, AlertCircle, CheckCircle2, Key, Loader2 } from "lucide-react";
 import GenerateForm from "@/components/GenerateForm";
 import ContentCard from "@/components/ContentCard";
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 const queryClient = new QueryClient();
+
+function StatusBadge() {
+  const { data, isLoading } = useQuery({
+    queryKey: ["status"],
+    queryFn: async () => {
+      const res = await fetch("/api/status");
+      return res.json() as Promise<{ status: string; message: string }>;
+    },
+    refetchInterval: 30000,
+  });
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center gap-1.5 text-brand-muted text-xs">
+        <Loader2 className="w-3 h-3 animate-spin" />
+        <span>Checking...</span>
+      </div>
+    );
+  }
+
+  const status = data?.status;
+  const config = {
+    missing: { color: "text-brand-muted", bg: "bg-gray-100", label: "No Key", icon: Key },
+    invalid: { color: "text-brand-error", bg: "bg-red-50", label: "Invalid", icon: AlertCircle },
+    healthy: { color: "text-brand-success", bg: "bg-green-50", label: "Active", icon: CheckCircle2 },
+    error: { color: "text-brand-warning", bg: "bg-orange-50", label: "Error", icon: AlertCircle },
+    unknown: { color: "text-brand-warning", bg: "bg-orange-50", label: "Unknown", icon: AlertCircle },
+  }[status || "missing"] as { color: string; bg: string; label: string; icon: any };
+
+  const Icon = config.icon;
+
+  return (
+    <div className={cn("flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium", config.bg, config.color)}>
+      <Icon className="w-3 h-3" />
+      <span>AI: {config.label}</span>
+    </div>
+  );
+}
 
 function HomeContent() {
   const [activeTab, setActiveTab] = useState<"generate" | "gallery">("generate");
   const [search, setSearch] = useState("");
   const [formatFilter, setFormatFilter] = useState<string>("ALL");
 
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ["contents"],
     queryFn: async () => {
       const res = await fetch("/api/content");
-      const data = await res.json();
-      return data.contents || [] as any[];
+      const d = await res.json();
+      return d.contents || [] as any[];
     },
   });
 
@@ -50,31 +87,36 @@ function HomeContent() {
               </div>
             </div>
 
-            {/* Nav tabs */}
-            <div className="flex gap-1 bg-brand-bg rounded-xl p-1">
-              <button
-                onClick={() => setActiveTab("generate")}
-                className={cn(
-                  "px-5 py-2 rounded-lg font-medium text-sm transition-all",
-                  activeTab === "generate"
-                    ? "bg-brand-orange text-white shadow-sm"
-                    : "text-brand-slate hover:text-brand-navy"
-                )}
-              >
-                ✨ Generate
-              </button>
-              <button
-                onClick={() => setActiveTab("gallery")}
-                className={cn(
-                  "px-5 py-2 rounded-lg font-medium text-sm transition-all",
-                  activeTab === "gallery"
-                    ? "bg-brand-orange text-white shadow-sm"
-                    : "text-brand-slate hover:text-brand-navy"
-                )}
-              >
-                🗂️ Gallery
-                <span className="ml-1.5 text-xs opacity-70">({contents.length})</span>
-              </button>
+            {/* Right side */}
+            <div className="flex items-center gap-4">
+              <StatusBadge />
+
+              {/* Nav tabs */}
+              <div className="flex gap-1 bg-brand-bg rounded-xl p-1">
+                <button
+                  onClick={() => setActiveTab("generate")}
+                  className={cn(
+                    "px-5 py-2 rounded-lg font-medium text-sm transition-all",
+                    activeTab === "generate"
+                      ? "bg-brand-orange text-white shadow-sm"
+                      : "text-brand-slate hover:text-brand-navy"
+                  )}
+                >
+                  ✨ Generate
+                </button>
+                <button
+                  onClick={() => setActiveTab("gallery")}
+                  className={cn(
+                    "px-5 py-2 rounded-lg font-medium text-sm transition-all",
+                    activeTab === "gallery"
+                      ? "bg-brand-orange text-white shadow-sm"
+                      : "text-brand-slate hover:text-brand-navy"
+                  )}
+                >
+                  🗂️ Gallery
+                  <span className="ml-1.5 text-xs opacity-70">({contents.length})</span>
+                </button>
+              </div>
             </div>
           </div>
         </div>

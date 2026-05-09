@@ -1,12 +1,7 @@
 import { NextResponse } from "next/server";
-import OpenAI from "openai";
 import { writeFile, mkdir } from "fs/promises";
 import path from "path";
 import { v4 as uuidv4 } from "uuid";
-
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY!,
-});
 
 const BRAND_STYLE = {
   imageStyleSuffix:
@@ -21,29 +16,90 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Caption is required" }, { status: 400 });
     }
 
-    // Build GPT Image 2 prompt
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return NextResponse.json({ error: "OpenAI API key not configured" }, { status: 500 });
+    }
+
+    // Build prompt
     let fullPrompt = caption;
     if (imageDescription) {
       fullPrompt += `. ${imageDescription}`;
     }
     fullPrompt += `. Style: ${BRAND_STYLE.imageStyleSuffix}. Instagram ${format || "SQUARE"} format, engaging social media visual.`;
 
-    // Image size based on format
-    const size = format === "STORY" ? "1365x768" : format === "PORTRAIT" ? "1024x1280" : "1024x1024";
+    // Map format to aspect ratio
+    const aspectRatio = format === "STORY" ? "9:16" : format === "PORTRAIT" ? "4:5" : "1:1";
 
-    const imageResponse = await openai.images.generate({
-      model: "gpt-image-2",
-      prompt: fullPrompt,
-      quality: "high",
-      size: size as "1024x1024" | "1024x1280" | "1365x768",
-      response_format: "b64_json",
+    // OpenRouter API call
+    const response = await fetch("https://openrouter.ai/api/v1/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "openai/gpt-5.4-image-2",
+        messages: [{ role: "user", content: fullPrompt }],
+        modalities: ["image", "text"],
+        image_config: {
+          aspect_ratio: aspectRatio,
+        },
+      }),
     });
 
-    const imageResult = imageResponse?.data?.[0] as any;
-    if (!imageResult?.b64_json) {
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({}));
+      console.error("OpenRouter error:", error);
+      return NextResponse.json(
+        { error: error?.error?.message || "OpenRouter API error" },
+        { status: response.status }
+      );
+    }
+
+    const data = await response.json();
+    const message = data?.choices?.[0]?.message;
+
+    // Extract image from message
+    let imageBase64: string | null = null;
+
+    if (message?.images && message.images.length > 0) {
+      // OpenRouter returns images in message.images array
+      const img = message.images[0];
+      if (img.image_url?.url) {
+        // Base64 data URL
+        const url = img.image_url.url;
+        if (url.startsWith("data:")) {
+          const parts = url.split(",");
+          if (parts.length >= 2) {
+            imageBase64 = parts[1];
+          }
+        }
+      }
+    }
+
+    // Fallback: check if content has image parts (some models return differently)
+    if (!imageBase64 && message?.content) {
+      const contentItems = Array.isArray(message.content) ? message.content : [message.content];
+      for (const item of contentItems) {
+        if (item?.type === "image" && item.source?.data) {
+          imageBase64 = item.source.data;
+          break;
+        }
+        if (item?.type === "image_url" && item.url?.startsWith("data:")) {
+          const parts = item.url.split(",");
+          if (parts.length >= 2) {
+            imageBase64 = parts[1];
+            break;
+          }
+        }
+      }
+    }
+
+    if (!imageBase64) {
+      console.error("No image in response:", JSON.stringify(data).slice(0, 500));
       return NextResponse.json({ error: "No image generated" }, { status: 500 });
     }
-    const b64 = imageResult.b64_json;
 
     // Save image
     const generatedDir = path.join(process.cwd(), "public", "generated");
@@ -51,7 +107,7 @@ export async function POST(request: Request) {
 
     const filename = `${uuidv4()}.png`;
     const filepath = path.join(generatedDir, filename);
-    const imageBuffer = Buffer.from(b64, "base64");
+    const imageBuffer = Buffer.from(imageBase64, "base64");
     await writeFile(filepath, imageBuffer);
 
     return NextResponse.json({
