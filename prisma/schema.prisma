@@ -1,0 +1,19 @@
+// This is your Prisma schema file
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model Content {
+  id               String   @id @default(uuid())
+  caption          String
+  imageUrl         String
+  imagePrompt      String
+  referenceImageUrl String?
+  format           String   @default("SQUARE")
+  createdAt        DateTime @default(now())
+}
