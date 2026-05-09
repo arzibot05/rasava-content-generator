@@ -73,8 +73,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "No image generated" }, { status: 500 });
     }
 
-    // Save image
-    const generatedDir = path.join(process.cwd(), "public", "generated");
+    // Save image — always use project root /public/generated
+    // Detect standalone mode: process.cwd() ends with .next/standalone
+    const isStandalone = path.basename(process.cwd()) === "standalone";
+    const projectRoot = isStandalone
+      ? path.resolve(process.cwd(), "..", "..")  // .next/standalone/.. = project root
+      : process.cwd();
+
+    const generatedDir = path.join(projectRoot, "public", "generated");
     await mkdir(generatedDir, { recursive: true });
 
     const filename = `${uuidv4()}.png`;
